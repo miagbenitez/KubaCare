@@ -27,9 +27,26 @@ npm install
 npm start
 ```
 
+En PowerShell de Windows puede que `npm.ps1` esté bloqueado por la política de ejecución. En ese caso usá `npm.cmd install` y `npm.cmd start`.
+
 En la terminal aparecerá un código QR. Escanealo desde **WhatsApp → Dispositivos vinculados → Vincular dispositivo**.
 
-La primera vez Puppeteer descarga un Chromium (~200 MB), así que el arranque puede tardar unos minutos. La sesión queda guardada en `.wwebjs_auth/`, por lo que en próximos arranques no hace falta volver a escanear.
+La primera vez Puppeteer descarga un Chromium (~200 MB), así que el arranque puede tardar unos minutos. La sesión se guarda **fuera del proyecto** (en `%LOCALAPPDATA%\KubaCare\wwebjs_auth` en Windows, o `~/.kubacare/wwebjs_auth` en otros sistemas) para que OneDrive/Dropbox no bloquee el `lockfile`. En próximos arranques no hace falta volver a escanear.
+
+### Seguridad: a quién le responde el bot 🔇
+
+Por defecto el bot **no envía mensajes a nadie**: los mensajes que generaría se muestran solo en la terminal (modo silencioso). Nunca responde en grupos, canales ni estados.
+
+Para habilitarlo, editá `config.js`:
+
+```js
+module.exports = {
+  allowedNumbers: ['5491123456789'], // tu número, sin + ni espacios
+  dryRun: false,                     // false = enviar mensajes reales
+};
+```
+
+Si `allowedNumbers` está vacío, el bot ignora todos los mensajes. Si `dryRun` está en `true`, no envía nada aunque haya números permitidos.
 
 Si Puppeteer no encuentra el navegador, se puede instalar a mano:
 
@@ -86,6 +103,7 @@ Bot:     ✅ *¡Pedido confirmado!* ... 🎟️ Número de pedido: *KC-4821*
 ## Estructura del proyecto
 
 ```text
+config.js            Números permitidos y modo silencioso
 src/
   catalog.js       Catálogo de productos y formato de precios
   conversation.js  Máquina de estados del flujo de venta (pura, sin WhatsApp)
@@ -104,6 +122,11 @@ npm test
 ```
 
 Hay 12 pruebas que cubren el saludo inicial, la selección de productos, cantidades, totales, entrega, confirmación, cancelación y respuestas fuera de contexto.
+
+## Solución de problemas
+
+- **`EBUSY: resource busy or locked ... lockfile`**: significa que quedó una instancia anterior abierta o que la carpeta de sesión está siendo sincronizada. Cerrá todas las ventanas de Node/Chrome, borrá la carpeta `%LOCALAPPDATA%\KubaCare\wwebjs_auth` y volvé a arrancar (te pedirá escanear el QR otra vez).
+- **`LOGOUT` / se cerró la sesión**: desvinculá el dispositivo desde WhatsApp y volvé a escanear el QR.
 
 ## Limitaciones y mejoras posibles
 
