@@ -12,7 +12,7 @@ module.exports = {
   // Vacío = el bot ignora a todo el mundo.
   // Formato: código de país + número, sin +, espacios ni guiones.
   // Ejemplo: ['5491123456789']
-  allowedNumbers: [],
+  allowedNumbers: ['5493757562024'],
 
   // true = no envía mensajes reales, solo los muestra en la terminal.
   // false = envía mensajes reales a los números permitidos.
