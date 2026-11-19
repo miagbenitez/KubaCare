@@ -2,59 +2,130 @@
 
 Bot de WhatsApp para **KubaCare** que atiende clientes de forma automática: saluda, muestra el catálogo de skincare, arma el pedido, calcula el total, pide los datos de entrega y confirma la venta.
 
-Está implementado con [whatsapp-web.js](https://github.com/walteroropes/whatsapp-web.js), que se conecta a **WhatsApp Web mediante código QR**.
+La lógica de venta (`src/conversation.js`) es independiente de la conexión: se puede usar con QR o con la API oficial de Meta.
 
----
+## Dos formas de conectarlo
 
-> ⚠️ **Aviso importante sobre el QR**
->
-> whatsapp-web.js es una librería **no oficial**: automatizar una cuenta personal escaneando el QR de WhatsApp Web **violar los Términos de Servicio de WhatsApp** y puede derivar en la suspensión del número. Está bien para un proyecto académico, una demo o uso local controlado.
->
-> Para un despliegue real se recomienda migrar a la **WhatsApp Cloud API** de Meta (oficial, sin QR, con token y número de negocio). La lógica del bot (`src/conversation.js`) es independiente de WhatsApp, así que se puede reutilizar cambiando solamente `src/index.js`.
+| | Opción A: QR (no oficial) | Opción B: Cloud API (oficial, recomendada) |
+| --- | --- | --- |
+| **Cómo conecta** | Escaneás un QR desde WhatsApp Web | Token + número de negocio (webhook) |
+| **Desde qué número responde** | El que escaneó el QR | El número configurado en Meta |
+| **Archivo** | `src/index.js` | `src/cloud.js` |
+| **Comando** | `npm.cmd start` | `npm.cmd run start:cloud` |
+| **Términos de WhatsApp** | No oficial (riesgo de bloqueo) | Oficial |
+
+> Opción B es la recomendada: no usa QR ni automatiza WhatsApp Web, y podés elegir el número desde el que responde (el número que registrás en Meta, o el número de prueba que Meta te da gratis).
 
 ---
 
 ## Requisitos
 
 - Node.js 18 o superior
-- Un número de WhatsApp con la app instalada en el teléfono
 - Conexión a internet
+- **Opción A:** un WhatsApp en el teléfono para escanear el QR
+- **Opción B:** cuenta en [Meta for Developers](https://developers.facebook.com/) y un número de prueba o de negocio
 
-## Instalación y arranque
+## Instalación
 
 ```bash
 npm install
-npm start
 ```
 
-En PowerShell de Windows puede que `npm.ps1` esté bloqueado por la política de ejecución. En ese caso usá `npm.cmd install` y `npm.cmd start`.
+En PowerShell de Windows puede que `npm.ps1` esté bloqueado por la política de ejecución. En ese caso usá `npm.cmd install` (y `npm.cmd start`/`npm.cmd test` en los comandos siguientes).
 
-En la terminal aparecerá un código QR. Escanealo desde **WhatsApp → Dispositivos vinculados → Vincular dispositivo**.
+---
 
-La primera vez Puppeteer descarga un Chromium (~200 MB), así que el arranque puede tardar unos minutos. La sesión se guarda **fuera del proyecto** (en `%LOCALAPPDATA%\KubaCare\wwebjs_auth` en Windows, o `~/.kubacare/wwebjs_auth` en otros sistemas) para que OneDrive/Dropbox no bloquee el `lockfile`. En próximos arranques no hace falta volver a escanear.
+## Opción B: WhatsApp Cloud API (responder desde un número de Meta)
 
-### Seguridad: a quién le responde el bot 🔇
+### 1. Crear la app y obtener el número de prueba
 
-Por defecto el bot **no envía mensajes a nadie**: los mensajes que generaría se muestran solo en la terminal (modo silencioso). Nunca responde en grupos, canales ni estados.
+1. Entrá a [developers.facebook.com](https://developers.facebook.com/) e iniciá sesión con tu cuenta de Facebook.
+2. **My Apps → Create App**. Elegí el caso de uso **Other** (o el que te muestre WhatsApp) y tipo **Business**.
+3. En el panel de la app, agregá el producto **WhatsApp**.
+4. Andá a **WhatsApp → API Setup** (o *Quickstart*). Ahí vas a ver:
+   - **Temporary access token** → es tu `META_ACCESS_TOKEN` (vence en ~24 horas; para algo permanente hay que crear un token de sistema).
+   - **Phone number ID** → es tu `META_PHONE_NUMBER_ID` (un número largo, NO es el número de teléfono).
+   - **Test number** → el número desde el que va a responder el bot.
+   - **To**: hacé clic en *Manage phone number list* y agregá **tu número personal** para poder probar (Meta solo permite enviar al número de prueba y a los números verificados en esta etapa).
 
-Para habilitarlo, editá `config.js`:
+> ⚠️ No podés poner "cualquier número" inventado: el bot responde desde el número de prueba/negocio de tu app, y en modo prueba solo puede escribirle a los números que vos agregues y verifiques.
+
+### 2. Configurar el proyecto
+
+Copiá el archivo de ejemplo y completá los datos:
+
+```powershell
+Copy-Item .env.example .env
+```
+
+Editá `.env`:
+
+```env
+META_ACCESS_TOKEN=EAAG...         # token temporal de API Setup
+META_PHONE_NUMBER_ID=123456...    # Phone number ID
+META_VERIFY_TOKEN=kubacare2026    # inventá uno, lo vas a usar al verificar el webhook
+META_API_VERSION=v21.0
+PORT=3000
+ALLOWED_NUMBERS=                  # vacío = responde a cualquiera que le escriba
+DRY_RUN=false
+```
+
+### 3. Levantar el webhook y exponerlo con ngrok
+
+Meta necesita una URL pública HTTPS para enviar los mensajes a tu computadora. Usá [ngrok](https://ngrok.com/) (gratis):
+
+```powershell
+npm.cmd run start:cloud
+# en otra ventana de PowerShell:
+ngrok http 3000
+```
+
+ngrok te va a dar una URL como `https://abc123.ngrok-free.app`. La URL de tu webhook es:
+
+```text
+https://abc123.ngrok-free.app/webhook
+```
+
+### 4. Conectar el webhook en Meta
+
+1. En **WhatsApp → Configuration → Webhook**, hacé clic en **Edit**.
+2. **Callback URL**: `https://TU-URL-DE-NGROK/webhook`
+3. **Verify token**: el mismo que pusiste en `META_VERIFY_TOKEN` (ej. `kubacare2026`).
+4. Guardá. Deberías ver en la terminal: `✅ Webhook verificado correctamente por Meta.`
+5. En *Webhook fields*, suscribite al campo **messages**.
+
+### 5. Probar
+
+Desde el número que agregaste en *To/recipients*, mandá `hola` al **número de prueba** de Meta. Las respuestas llegan al chat de WhatsApp desde ese número.
+
+> Si cerrás ngrok o cambiás la URL, tenés que actualizar el Callback URL en Meta.
+
+---
+
+## Opción A: QR con WhatsApp Web (no oficial)
+
+```bash
+npm.cmd start
+```
+
+En la terminal aparece un QR. Escanealo desde **WhatsApp → Dispositivos vinculados → Vincular dispositivo**.
+
+La primera vez Puppeteer descarga Chromium (~200 MB). La sesión se guarda fuera del proyecto (`%LOCALAPPDATA%\KubaCare\wwebjs_auth` en Windows) para evitar bloqueos de OneDrive.
+
+### Seguridad del modo QR
+
+Por defecto el bot **no envía mensajes a nadie** (modo silencioso). Nunca responde en grupos, canales ni estados. Para habilitarlo, editá `config.js`:
 
 ```js
 module.exports = {
-  allowedNumbers: ['5491123456789'], // tu número, sin + ni espacios
-  dryRun: false,                     // false = enviar mensajes reales
+  allowedNumbers: ['5491123456789'], // número que puede escribirle al bot
+  dryRun: false,
 };
 ```
 
-Si `allowedNumbers` está vacío, el bot ignora todos los mensajes. Si `dryRun` está en `true`, no envía nada aunque haya números permitidos.
+Si `allowedNumbers` está vacío, ignora a todos. Si `dryRun` es `true`, solo muestra las respuestas en la terminal.
 
-Si Puppeteer no encuentra el navegador, se puede instalar a mano:
-
-```bash
-npx puppeteer browsers install chrome
-```
-
-O indicar un Chrome existente con la variable `PUPPETEER_EXECUTABLE_PATH`.
+> ⚠️ Esta opción automatiza WhatsApp Web de forma no oficial y puede derivar en la suspensión del número. Úsala solo para demos o proyectos académicos.
 
 ## ¿Cómo se usa?
 
@@ -103,34 +174,47 @@ Bot:     ✅ *¡Pedido confirmado!* ... 🎟️ Número de pedido: *KC-4821*
 ## Estructura del proyecto
 
 ```text
-config.js            Números permitidos y modo silencioso
+config.js            Números permitidos y modo silencioso (opción QR)
+.env.example         Plantilla de credenciales de Meta (opción Cloud API)
 src/
   catalog.js       Catálogo de productos y formato de precios
   conversation.js  Máquina de estados del flujo de venta (pura, sin WhatsApp)
-  index.js         Conexión QR con WhatsApp Web y envío de mensajes
+  index.js         Conexión QR con WhatsApp Web
+  cloud.js         Servidor webhook + envío por WhatsApp Cloud API
+  cloud-utils.js   Parseo del payload de Meta y de números permitidos
   utils.js         Normalización de texto
 test/
   conversation.test.js  Pruebas del flujo completo
+  cloud.test.js         Pruebas del webhook de Meta
 ```
 
-La separación entre `conversation.js` e `index.js` permite probar toda la lógica de venta sin escanear el QR ni iniciar Chromium.
+La separación entre `conversation.js` y los archivos de conexión permite probar toda la lógica de venta sin escanear el QR ni necesitar Meta.
 
 ## Pruebas
 
 ```bash
-npm test
+npm.cmd test
 ```
 
-Hay 12 pruebas que cubren el saludo inicial, la selección de productos, cantidades, totales, entrega, confirmación, cancelación y respuestas fuera de contexto.
+Hay 17 pruebas que cubren el saludo inicial, la selección de productos, cantidades, totales, entrega, confirmación, cancelación, respuestas fuera de contexto y el parseo del webhook de Meta.
 
 ## Solución de problemas
 
-- **`EBUSY: resource busy or locked ... lockfile`**: significa que quedó una instancia anterior abierta o que la carpeta de sesión está siendo sincronizada. Cerrá todas las ventanas de Node/Chrome, borrá la carpeta `%LOCALAPPDATA%\KubaCare\wwebjs_auth` y volvé a arrancar (te pedirá escanear el QR otra vez).
+**Opción QR**
+
+- **`EBUSY: resource busy or locked ... lockfile`**: significa que quedó una instancia anterior abierta o que la carpeta de sesión está siendo sincronizada. Cerrá todas las ventanas de Node/Chrome, borrá `%LOCALAPPDATA%\KubaCare\wwebjs_auth` y volvé a arrancar.
 - **`LOGOUT` / se cerró la sesión**: desvinculá el dispositivo desde WhatsApp y volvé a escanear el QR.
+
+**Opción Cloud API**
+
+- **Webhook no verifica**: revisá que `META_VERIFY_TOKEN` en `.env` sea idéntico al que pusiste en Meta y que ngrok esté apuntando al puerto correcto.
+- **No llegan mensajes**: asegurate de estar suscrito al campo **messages** en *Webhook fields* y de que el número que te escribe esté agregado como *recipient* (en modo prueba).
+- **Error 190/401**: el token temporal venció. Copiá uno nuevo desde *API Setup*.
+- **Error 131030**: el número de destino no está en la lista de destinatarios permitidos.
 
 ## Limitaciones y mejoras posibles
 
 - Las sesiones viven **en memoria**: al reiniciar el proceso se pierden. Se podrían persistir en un archivo o base de datos.
 - Los pedidos confirmados no se guardan ni se envían a un sistema externo; el resumen queda en el chat.
+- En la Cloud API en modo prueba solo podés escribir a números verificados y el token temporal vence en ~24 horas.
 - `npm audit` reporta avisos de dependencias transitivas de `whatsapp-web.js`/Puppeteer. No afectan el flujo del bot, pero conviene revisarlos antes de un despliegue real.
-- Para producción: usar WhatsApp Cloud API, base de datos de pedidos y manejo de errores/Reintentos más robusto.
